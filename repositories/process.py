@@ -1,6 +1,6 @@
 
 import os
-from qdrant_client import QdrantClient
+from env import client
 from qdrant_client.models import PointStruct, VectorParams, Distance
 from schemas.message_common_schema import MessageCommon
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -18,7 +18,6 @@ import shutil
 import uuid
 
 TEMP_DIR = "./temp_files"
-client = QdrantClient("localhost", port=6333)
 
 def add_to_qdrant(chunks):
     if not client.collection_exists(db_name):
