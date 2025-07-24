@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI
 from core.config import project_name, api_v1_str, backend_cors_origins
 from starlette.middleware.cors import CORSMiddleware

@@ -3,17 +3,11 @@ import openai
 from qdrant_client.http import models as rest
 from langchain_core.documents import Document
 from schemas.message_common_schema import MessageCommon, Response
-from utils.function import embedding_model
-from core.config import db_name,api_key
+from utils.function import embedding_model, gemini_model
+from core.config import db_name
 from env import client
 import numpy as np
 
-#Gemini
-genai.configure(api_key=api_key)
-gemini_model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
-
-#OpenAI
-# openai.api_key = api_key
 
 def search_rag(query: str, top_k: int = 5) -> Response:
     try:
