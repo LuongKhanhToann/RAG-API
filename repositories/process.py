@@ -1,4 +1,5 @@
 import os
+from core.const import CHUNK_OVER_LAP, CHUNK_SIZE, MIN_CHUNK_LENGTH
 from env import client
 from qdrant_client.models import PointStruct, VectorParams, Distance
 from schemas.message_common_schema import MessageCommon
@@ -27,6 +28,7 @@ import io
 import easyocr
 import numpy as np
 import logging
+import gc
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -62,6 +64,9 @@ def add_to_qdrant(chunks):
             )
         )
     client.upsert(collection_name=db_name, points=points)
+    
+    del points 
+    gc.collect()
 
 def save_uploaded_file(file: UploadFile) -> str:
     os.makedirs(TEMP_DIR, exist_ok=True)
@@ -163,17 +168,17 @@ def load_document(file_path: str) -> List[Document]:
 
 def split_documents(documents: List[Document]) -> List[Document]:
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1500,
-        chunk_overlap=300
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVER_LAP
     )
     return text_splitter.split_documents(documents)
 
 def generate_title(text: str) -> str:
-    prompt = f"""Read the following text and generate a short, meaningful title (max 10 words) that summarizes the main topic:
+    prompt = f"""Hãy đọc đoạn văn sau và tạo một tiêu đề ngắn, súc tích (tối đa 10 từ) tóm tắt nội dung chính:
 
 {text}
 
-Title:"""
+Tiêu đề:"""
     try:
         response = gemini_model.generate_content(prompt)
         title = response.text.strip().replace('"', '')  # clean quotes
@@ -190,11 +195,12 @@ Title:"""
 
 async def process_data(file: UploadFile = None, google_doc_id: str = None) -> MessageCommon:
     try:
+        chunks = []
         if google_doc_id:
             doc_id = extract_google_doc_id(google_doc_id)
             document = load_google_doc(doc_id)
             chunks = split_documents([document])
-        elif file and file != None:
+        elif file:
             file_path = save_uploaded_file(file)
             documents = load_document(file_path)
             chunks = split_documents(documents)
@@ -202,10 +208,25 @@ async def process_data(file: UploadFile = None, google_doc_id: str = None) -> Me
         else:
             return MessageCommon(detail="No input provided.")
         if chunks:
+            valid_chunks = []
             for chunk in chunks:
-                title = generate_title(chunk.page_content)
+                content = chunk.page_content.strip()
+                if len(content) < MIN_CHUNK_LENGTH:
+                    logger.debug(f"[CHUNK_SKIPPED] Too short: {content}")
+                    continue 
+                
+                title = generate_title(content)
                 chunk.metadata["title"] = title
-        add_to_qdrant(chunks)
+                valid_chunks.append(chunk)
+                
+            # Process and upsert data in smaller batches
+            batch_size = 10  # Adjust batch size based on memory limits
+            for i in range(0, len(valid_chunks), batch_size):
+                batch = valid_chunks[i:i + batch_size]
+                add_to_qdrant(batch)
+                del batch  # Release memory
+                gc.collect()  # Force garbage collection
+                
         return MessageCommon(detail="Data updated successfully.")
 
     except Exception as e:
